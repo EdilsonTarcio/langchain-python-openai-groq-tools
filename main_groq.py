@@ -13,7 +13,7 @@ destino = "Gaibu - Pernambuco"
 prompt = f"Criar um roteiro de viagem de {numero_dias} dias para {destino}, incluindo sugestões de atividades, restaurantes e pontos turísticos."
 
 response = client.chat.completions.create(
-    model="llama-3.3-70b-versatile",
+    model="openai/gpt-oss-120b",
     messages=[
         {"role": "system", "content": "Você é um assistente de viagem especializado em criar roteiros personalizados."},
         {"role": "user", "content": prompt}
