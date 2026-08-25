@@ -1,8 +1,11 @@
 import os
+import asyncio
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from typing import Literal, TypedDict
+from langgraph.graph import StateGraph, START, END
+from langchain_core.runnables import RunnableConfig
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -52,16 +55,51 @@ prompt_roteador = ChatPromptTemplate.from_messages(
 
 roteador = prompt_roteador | modelo.with_structured_output(Rota)
 
-def responder_pergunta(pergunta: str):
-    destino = roteador.invoke({"query": pergunta})["destino"]
-    if destino == "praia":
-        resposta = cadeia_praia.invoke({"query": pergunta})
-    elif destino == "montanha":
-        resposta = cadeia_montanha.invoke({"query": pergunta})
-    elif destino == "rios":
-        resposta = cadeia_rios.invoke({"query": pergunta})
-    else:
-        resposta = "Desculpe, não consegui identificar o tipo de destino."
-    return resposta
+class Estado(TypedDict):
+    query: str
+    destino: Rota
+    resposta: str
+    
+async def no_roteador(estado: Estado, config: RunnableConfig):
+    return {"destino": await roteador.ainvoke({"query": estado["query"]}, config)}
 
-print(responder_pergunta("Quero visitar uma praia com águas cristalinas e atividades de mergulho."))
+async def no_praia(estado: Estado, config: RunnableConfig):
+    return {"resposta": await cadeia_praia.ainvoke({"query": estado["query"]}, config)}
+
+async def no_montanha(estado: Estado, config: RunnableConfig):
+    return {"resposta": await cadeia_montanha.ainvoke({"query": estado["query"]}, config)}
+
+async def no_rios(estado: Estado, config: RunnableConfig):
+    return {"resposta": await cadeia_rios.ainvoke({"query": estado["query"]}, config)}
+
+def escolher_no(estado:Estado)->Literal["praia", "montanha", "rios"]:
+    if estado["destino"]["destino"] == "praia":
+        return "praia"
+    elif estado["destino"]["destino"] == "montanha":
+        return "montanha"
+    elif estado["destino"]["destino"] == "rios":
+        return "rios"
+    else:
+        raise ValueError("Destino inválido")
+    
+grafo = StateGraph(Estado)
+grafo.add_node("roteador", no_roteador)
+grafo.add_node("praia", no_praia)
+grafo.add_node("montanha", no_montanha)
+grafo.add_node("rios", no_rios)
+
+grafo.add_edge(START, "roteador")
+grafo.add_conditional_edges("roteador", escolher_no)
+grafo.add_edge("praia", END)
+grafo.add_edge("montanha", END)
+grafo.add_edge("rios", END)
+
+app = grafo.compile()
+
+async def main():
+    resposta = await app.ainvoke(
+        {"query": "Quero viajar para um lugar com praia e sol."}
+    )
+    print(resposta["resposta"])
+    
+asyncio.run(main())
